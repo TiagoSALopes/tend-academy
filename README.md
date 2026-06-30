@@ -6,7 +6,7 @@ Sistema inteligente para gestão de rotinas de estudo.
 - Importação automática de horários via Excel (.xlsx).
 - Extração de disciplinas por turma (ENI/ENC).
 - Geração de plano de estudos personalizado com IA.
-
+\
 ## Tecnologias
 - PHP 8.x
 - JavaScript (Fetch API)
