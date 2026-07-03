@@ -16,17 +16,33 @@ try {
     $stmt->execute([$_SESSION['user_id']]);
     $planos = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $resultados = array_map(function ($plano) {
+    $disciplinasSet = [];
+    $planosResumidos = [];
+
+    foreach ($planos as $plano) {
         $linhas = preg_split('/\r\n|\r|\n/', trim($plano['conteudo']), -1, PREG_SPLIT_NO_EMPTY);
         $resumo = !empty($linhas) ? mb_substr(trim($linhas[0]), 0, 80) : 'Plano sem resumo';
-        return [
+        $disciplinas = array_values(array_filter(array_map('trim', preg_split('/[;,]+/', $plano['disciplina']))));
+        if (empty($disciplinas) && trim($plano['disciplina']) !== '') {
+            $disciplinas = [trim($plano['disciplina'])];
+        }
+        foreach ($disciplinas as $disciplina) {
+            $chave = mb_strtolower($disciplina, 'UTF-8');
+            if ($chave !== '') {
+                $disciplinasSet[$chave] = $disciplina;
+            }
+        }
+        $planosResumidos[] = [
             'id' => $plano['id'],
             'disciplina' => $plano['disciplina'],
             'resumo' => $resumo
         ];
-    }, $planos);
+    }
 
-    echo json_encode($resultados);
+    echo json_encode([
+        'disciplinas' => array_values($disciplinasSet),
+        'planos' => $planosResumidos
+    ]);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Erro ao carregar planos sem data: ' . $e->getMessage()]);

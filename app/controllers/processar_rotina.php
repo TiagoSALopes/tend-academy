@@ -65,7 +65,8 @@ $prompt = "Crie um plano de estudos detalhado para $disciplinaBase (Turma $turma
           "$listaDisciplinas" .
           $horariosTexto .
           "Organize o plano de estudos para os horários livres, evitando sobrepor com as aulas já marcadas, e use blocos de 1 a 2 horas. " .
-          "Inclua revisão e preparação ativa para testes, distribuindo os estudos de forma equilibrada ao longo da semana. " .
+          "Inclua revisão e preparação ativa para todas as disciplinas mesmo antes da atribuição da data do teste, distribuindo o trabalho de forma equilibrada ao longo de cada semana. " .
+          "Não espere pela data do teste; gere o plano normal de estudos com blocos semanais regulares. " .
           "Responda apenas em português e utilize o formato: Segunda 08:00-10:00 - Estudo de Matemática. " .
           "Não inclua a data do teste no plano; a data do teste será inserida depois da geração.";
 

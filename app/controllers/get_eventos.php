@@ -20,7 +20,6 @@ try {
 
     $eventos = [];
 
-    $weekStart = new DateTimeImmutable('monday this week');
     $dayNames = [
         'segunda' => 1,
         'segunda-feira' => 1,
@@ -68,22 +67,32 @@ try {
                 continue;
             }
 
-            if (preg_match('/\b(' . implode('|', array_map('preg_quote', array_keys($dayNames))) . ')\b.*?(\d{1,2}[:h]\d{2})\s*[-–]\s*(\d{1,2}[:h]\d{2})(?:\s*[-–:]\s*|\s+)(.+)/iu', $linha, $matches)) {
-                $dia = mb_strtolower($matches[1], 'UTF-8');
-                $inicio = str_replace('h', ':', $matches[2]);
-                $fim = str_replace('h', ':', $matches[3]);
-                $descricao = trim($matches[4]);
-                $weekday = $dayNames[$dia] ?? null;
+            $regexes = [
+                '/\b(' . implode('|', array_map('preg_quote', array_keys($dayNames))) . ')\b[^\d\n]{0,15}(\d{1,2}(?:[:h]\d{2}))\s*(?:-|–|—|a|até|to)\s*(\d{1,2}(?:[:h]\d{2}))(?:\s*[-\-–—:]\s*(.+))?/iu',
+                '/\b(' . implode('|', array_map('preg_quote', array_keys($dayNames))) . ')\b[^\d\n]{0,15}(\d{1,2}(?:[:h]\d{2}))\s*(?:às|as|a|at)\s*(\d{1,2}(?:[:h]\d{2}))(?:\s*[-\-–—:]\s*(.+))?/iu',
+                '/\b(' . implode('|', array_map('preg_quote', array_keys($dayNames))) . ')\b.*?de\s*(\d{1,2}(?:[:h]\d{2}))\s*(?:a|até|to)\s*(\d{1,2}(?:[:h]\d{2}))(?:\s*[-\-–—:]\s*(.+))?/iu',
+                '/\b(' . implode('|', array_map('preg_quote', array_keys($dayNames))) . ')\b.*?(\d{1,2}(?:[:h]\d{2}))(?:\s*[-\-–—:]\s*(.+))?/iu'
+            ];
 
-                if ($weekday) {
-                    $weeklyEvents[] = [
-                        'weekday' => $weekday,
-                        'english' => $weekNamesEnglish[$weekday],
-                        'start' => $inicio,
-                        'end' => $fim,
-                        'descricao' => $descricao,
-                        'linha' => $linha
-                    ];
+            foreach ($regexes as $regex) {
+                if (preg_match($regex, $linha, $matches)) {
+                    $dia = mb_strtolower($matches[1], 'UTF-8');
+                    $inicio = str_replace('h', ':', $matches[2]);
+                    $fim = str_replace('h', ':', $matches[3]);
+                    $descricao = trim($matches[4] ?? '');
+                    $weekday = $dayNames[$dia] ?? null;
+
+                    if ($weekday) {
+                        $weeklyEvents[] = [
+                            'weekday' => $weekday,
+                            'english' => $weekNamesEnglish[$weekday],
+                            'start' => $inicio,
+                            'end' => $fim,
+                            'descricao' => $descricao ?: 'Sessão de estudo',
+                            'linha' => $linha
+                        ];
+                    }
+                    break;
                 }
             }
         }
@@ -134,9 +143,9 @@ try {
         }
     }
 
-    echo json_encode($eventos);
+    echo json_encode($eventos, JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Erro ao processar eventos: ' . $e->getMessage()]);
+    echo json_encode(['error' => 'Erro ao processar eventos: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
