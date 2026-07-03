@@ -1,4 +1,27 @@
 
+<?php
+require_once '../app/Includes/auth.php';
+
+redirect_if_logged_in();
+
+$errorMessage = '';
+if (isset($_GET['error'])) {
+    switch ($_GET['error']) {
+        case 'missing_fields':
+            $errorMessage = 'Por favor, preenche todos os campos.';
+            break;
+        case 'invalid_email':
+            $errorMessage = 'O email inserido não é válido.';
+            break;
+        case 'dados_incorretos':
+            $errorMessage = 'Email ou palavra-passe incorretos.';
+            break;
+        default:
+            $errorMessage = 'Erro no login. Tenta novamente.';
+            break;
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="pt-pt">
 <head>
@@ -11,6 +34,11 @@
 
     <div class="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
         <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">Bem-vindo de volta!</h1>
+        <?php if ($errorMessage !== ''): ?>
+            <div class="mb-4 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+                <?= htmlspecialchars($errorMessage) ?>
+            </div>
+        <?php endif; ?>
         
         <form action="/TEND-Academy/app/controllers/login_action.php" method="POST" class="space-y-4">
             <div>

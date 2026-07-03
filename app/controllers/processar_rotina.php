@@ -3,93 +3,112 @@ session_start();
 require_once '../../vendor/autoload.php';
 require_once '../Core/Database.php';
 
-// 1. Segurança: Verificar sessão e método
+// Retornar JSON sempre
+header('Content-Type: application/json');
+
 if (!isset($_SESSION['user_id']) || $_SERVER['REQUEST_METHOD'] !== 'POST') {
-    die("Acesso negado.");
+    echo json_encode(['success' => false, 'message' => 'Acesso negado.']);
+    exit();
 }
 
-// 2. Carregar variáveis de ambiente (Chave da API)
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../../');
 $dotenv->load();
 
-// 3. Sanitizar e Validar Entradas
-$turma = filter_input(INPUT_POST, 'turma_selecionada', FILTER_SANITIZE_SPECIAL_CHARS);
-$data_teste = filter_input(INPUT_POST, 'data_teste', FILTER_SANITIZE_SPECIAL_CHARS);
-$dias = filter_input(INPUT_POST, 'dias_antes', FILTER_VALIDATE_INT);
+$rawInput = file_get_contents('php://input');
+$input = json_decode($rawInput, true);
 
-if (!$turma || !$data_teste || !$dias) {
-    die("Dados inválidos. Por favor, preencha todos os campos corretamente.");
+if (!is_array($input)) {
+    parse_str($rawInput, $parsed);
+    $input = $parsed;
 }
 
-// 4. Buscar disciplinas na BD
-try {
-    $db = new \TEND\Core\Database();
-    $conn = $db->getConnection();
+$turma = filter_var($input['turma_selecionada'] ?? '', FILTER_SANITIZE_SPECIAL_CHARS);
+$periodo = filter_var($input['periodo'] ?? 'semestre', FILTER_SANITIZE_SPECIAL_CHARS);
+$disciplinas = is_array($input['disciplinas']) ? array_filter($input['disciplinas'], fn($d) => !empty(trim($d))) : [];
+$disciplinas = array_map(fn($d) => trim(filter_var($d, FILTER_SANITIZE_SPECIAL_CHARS)), $disciplinas);
+$horarios = is_array($input['horarios']) ? $input['horarios'] : [];
 
-    $stmt = $conn->prepare("SELECT nome_disciplina FROM disciplines WHERE user_id = ?");
-    $stmt->execute([$_SESSION['user_id']]);
-    $disciplinas = $stmt->fetchAll(PDO::FETCH_COLUMN);
+if (empty($turma)) {
+    echo json_encode(['success' => false, 'message' => 'A turma não foi identificada.']);
+    exit();
+}
 
-    if (empty($disciplinas)) {
-        die("Nenhuma disciplina encontrada. Importe o seu horário primeiro.");
+if (empty($disciplinas)) {
+    echo json_encode(['success' => false, 'message' => 'É necessário ter pelo menos uma disciplina selecionada para gerar o plano.']);
+    exit();
+}
+
+$periodoTexto = $periodo === 'trimestre'
+    ? 'um trimestre completo (cerca de 12 semanas)'
+    : 'um semestre completo (cerca de 16 semanas)';
+
+$listaDisciplinas = 'As disciplinas a incluir são: ' . implode(', ', $disciplinas) . '. ';
+$disciplinaBase = count($disciplinas) === 1 ? $disciplinas[0] : 'as disciplinas ' . implode(', ', $disciplinas);
+
+$horariosTexto = '';
+if (!empty($horarios)) {
+    $linhasHorario = [];
+    foreach ($horarios as $horario) {
+        if (empty($horario['dia']) || empty($horario['inicio'])) {
+            continue;
+        }
+        $fim = $horario['fim'] ?: date('H:i', strtotime($horario['inicio'] . ' +1 hour'));
+        $linhasHorario[] = trim($horario['dia']) . ' ' . trim($horario['inicio']) . '-' . trim($fim) . ' - ' . trim($horario['disciplina']);
     }
-    $lista_disciplinas = implode(", ", $disciplinas);
-} catch (Exception $e) {
-    die("Erro na base de dados: " . $e->getMessage());
+    if (!empty($linhasHorario)) {
+        $horariosTexto = 'O horário de aulas fixas da turma é:
+' . implode("\n", $linhasHorario) . "\n";
+    }
 }
 
-// 5. Preparar Prompt para a IA
-$prompt = "Cria um plano de estudos detalhado e motivador para um estudante da turma $turma. 
-O teste é no dia $data_teste e o estudante tem $dias dias de preparação. 
-As disciplinas a estudar são: $lista_disciplinas. 
-Organiza o plano por dia, sugerindo quais disciplinas estudar e tópicos de foco, mantendo um equilíbrio saudável.";
+$prompt = "Crie um plano de estudos detalhado para $disciplinaBase (Turma $turma), cobrindo $periodoTexto. " .
+          "$listaDisciplinas" .
+          $horariosTexto .
+          "Organize o plano de estudos para os horários livres, evitando sobrepor com as aulas já marcadas, e use blocos de 1 a 2 horas. " .
+          "Inclua revisão e preparação ativa para testes, distribuindo os estudos de forma equilibrada ao longo da semana. " .
+          "Responda apenas em português e utilize o formato: Segunda 08:00-10:00 - Estudo de Matemática. " .
+          "Não inclua a data do teste no plano; a data do teste será inserida depois da geração.";
 
-// 6. Chamada à API da OpenAI (Usando cURL)
-$apiKey = $_ENV['OPENAI_API_KEY'];
-
-$ch = curl_init('https://api.openai.com/v1/chat/completions');
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Content-Type: application/json',
-    'Authorization: Bearer ' . $apiKey
-]);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-    'model' => 'gpt-3.5-turbo',
-    'messages' => [['role' => 'user', 'content' => $prompt]],
-    'temperature' => 0.7
-]));
-
-$response = curl_exec($ch);
-$error = curl_error($ch);
-curl_close($ch);
-
-if ($error) {
-    die("Erro ao comunicar com a IA: " . $error);
+function chamarIA($servico, $prompt) {
+    $tentativas = 0;
+    while ($tentativas < 2) {
+        if ($servico === 'groq') {
+            $url = "https://api.groq.com/openai/v1/chat/completions";
+            $headers = ['Authorization: Bearer ' . $_ENV['GROQ_API_KEY'], 'Content-Type: application/json'];
+            $payload = ['model' => 'llama-3.3-70b-versatile', 'messages' => [['role' => 'user', 'content' => $prompt]]];
+        } else {
+            $url = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=" . $_ENV['GEMINI_API_KEY'];
+            $headers = ['Content-Type: application/json'];
+            $payload = ['contents' => [['parts' => [['text' => $prompt]]]]];
+        }
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($httpCode === 200) {
+            $data = json_decode($response, true);
+            return ($servico === 'groq') ? $data['choices'][0]['message']['content'] : $data['candidates'][0]['content']['parts'][0]['text'];
+        }
+        $tentativas++;
+        usleep(500000);
+    }
+    return null;
 }
 
-$data = json_decode($response, true);
-$plano = $data['choices'][0]['message']['content'] ?? "Erro ao gerar plano. Tente novamente mais tarde.";
 
-// 7. Exibir o resultado de forma limpa
-?>
-<!DOCTYPE html>
-<html lang="pt-pt">
-<head>
-    <meta charset="UTF-8">
-    <title>TEND Academy | O Teu Plano</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-50 min-h-screen p-4 lg:p-12">
-    <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-gray-100">
-        <h1 class="text-3xl font-bold text-indigo-900 mb-6">Plano de Estudo Inteligente</h1>
-        <div class="prose prose-indigo max-w-none text-gray-700 leading-relaxed whitespace-pre-line">
-            <?php echo nl2br(htmlspecialchars($plano)); ?>
-        </div>
-        <div class="mt-8 flex gap-4">
-            <button onclick="window.print()" class="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg font-bold hover:bg-gray-300">Imprimir Plano</button>
-            <a href="../../public/rotina.php" class="bg-indigo-900 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-800">Voltar</a>
-        </div>
-    </div>
-</body>
-</html>
+$plano = chamarIA('groq', $prompt) ?? chamarIA('gemini', $prompt);
+
+if (!$plano) {
+    echo json_encode(['success' => false, 'message' => 'Sistema indisponível.']);
+} else {
+    // Retornamos um JSON com o conteúdo e a data, para o JS do rotina.php tratar
+    echo json_encode([
+        'success' => true,
+        'plano' => $plano,
+        'disciplina' => $disciplinaBase
+    ]);
+}

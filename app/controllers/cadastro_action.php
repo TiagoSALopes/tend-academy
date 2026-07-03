@@ -1,43 +1,56 @@
 <?php
-// Inicia a sessão para podermos usar variáveis globais se necessário
-session_start();
-
-// O require_once aponta para a pasta Core. 
-// Como estamos em 'app/auth/', subimos um nível para 'app/' com '../'
+require_once '../Includes/auth.php';
 require_once '../Core/Database.php';
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Recolha de dados do formulário
-    $username = $_POST['username'] ?? '';
-    $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
+redirect_if_logged_in();
 
-    // Validação básica
-    if (empty($username) || empty($email) || empty($password)) {
-        die("Por favor, preenche todos os campos.");
-    }
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ../../public/cadastro.php');
+    exit();
+}
 
-    // Encriptação da palavra-passe para segurança
-    $password_hashed = password_hash($password, PASSWORD_DEFAULT);
+$username = trim($_POST['username'] ?? '');
+$email = trim($_POST['email'] ?? '');
+$password = $_POST['password'] ?? '';
 
-    try {
-        // Conexão à base de dados
-        $db = new \TEND\Core\Database();
-        $conn = $db->getConnection();
+if ($username === '' || $email === '' || $password === '') {
+    header('Location: ../../public/cadastro.php?error=missing_fields');
+    exit();
+}
 
-        // Inserção na tabela 'users'
-        $stmt = $conn->prepare("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)");
-        $stmt->execute([$username, $email, $password_hashed]);
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    header('Location: ../../public/cadastro.php?error=invalid_email');
+    exit();
+}
 
-        // Redireciona para o login com uma mensagem de sucesso
-        header("Location: ../../public/login.php?status=sucesso");
+try {
+    $db = new \TEND\Core\Database();
+    $conn = $db->getConnection();
+
+    $stmt = $conn->prepare('SELECT username, email FROM users WHERE username = ? OR email = ? LIMIT 1');
+    $stmt->execute([$username, $email]);
+    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($existing) {
+        if (mb_strtolower($existing['email'], 'UTF-8') === mb_strtolower($email, 'UTF-8')) {
+            header('Location: ../../public/cadastro.php?error=email_exists');
+            exit();
+        }
+        if (mb_strtolower($existing['username'], 'UTF-8') === mb_strtolower($username, 'UTF-8')) {
+            header('Location: ../../public/cadastro.php?error=username_exists');
+            exit();
+        }
+        header('Location: ../../public/cadastro.php?error=user_exists');
         exit();
-    } catch (Exception $e) {
-        // Exibe o erro se algo falhar (como email duplicado ou tabela inexistente)
-        die("Erro ao registar: " . $e->getMessage());
     }
-} else {
-    // Se tentarem aceder a este ficheiro diretamente pela URL, redireciona para o cadastro
-    header("Location: ../../public/cadastro.php");
+
+    $password_hashed = password_hash($password, PASSWORD_DEFAULT);
+    $stmt = $conn->prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)');
+    $stmt->execute([$username, $email, $password_hashed]);
+
+    header('Location: ../../public/login.php?status=sucesso');
+    exit();
+} catch (Exception $e) {
+    header('Location: ../../public/cadastro.php?error=database_error');
     exit();
 }

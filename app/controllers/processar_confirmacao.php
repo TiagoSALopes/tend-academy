@@ -1,7 +1,10 @@
 <?php
 require '../../vendor/autoload.php';
+require_once '../Includes/auth.php';
 require_once '../Core/Database.php';
-session_start();
+
+require_login();
+require_post();
 
 use PhpOffice\PhpSpreadsheet\IOFactory;
 

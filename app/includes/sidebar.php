@@ -40,6 +40,11 @@ function getSidebarClass(string $pagina_alvo, string $pagina_atual): string {
                     Criar minha rotina
                 </a>
             </li>
+            <li>
+                <a href="/TEND-Academy/public/logout.php" class="block py-2 px-4 rounded transition-all duration-300 border-l-4 border-transparent hover:bg-indigo-800 hover:border-indigo-400 text-indigo-200 hover:text-white">
+                    Sair
+                </a>
+            </li>
         </ul>
     </nav>
     

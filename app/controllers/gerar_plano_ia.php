@@ -1,8 +1,9 @@
 <?php
-session_start();
+require_once '../Includes/auth.php';
 require_once '../Core/Database.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') exit('Acesso inválido');
+require_login();
+require_post();
 
 $db = new \TEND\Core\Database();
 $conn = $db->getConnection();

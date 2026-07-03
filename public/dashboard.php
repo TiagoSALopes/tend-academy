@@ -1,12 +1,9 @@
 <?php
 // public/dashboard.php
+require_once '../app/Includes/auth.php';
 require_once '../app/Core/Database.php';
-session_start();
 
-if (!isset($_SESSION['user_id'])) {
-    header("Location: login.php");
-    exit();
-}
+require_login();
 
 use TEND\Core\Database;
 $db = new Database();
